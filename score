@@ -1,0 +1,57 @@
+import requests
+import json
+import pandas as pd
+
+# Constants for API endpoints (Replace with actual API keys)
+ETHERSCAN_API_KEY = "your_etherscan_api_key"
+DUNE_API_KEY = "your_dune_api_key"
+
+# Function to get wallet transaction history
+def get_wallet_transactions(wallet_address):
+    url = f"https://api.etherscan.io/api?module=account&action=txlist&address={wallet_address}&apikey={ETHERSCAN_API_KEY}"
+    response = requests.get(url).json()
+    return response["result"] if "result" in response else []
+
+# Function to analyze borrowing and lending activity (Aave example)
+def get_defi_activity(wallet_address):
+    dune_query = f"SELECT * FROM aave_transactions WHERE wallet='{wallet_address}'"
+    headers = {"X-Dune-API-Key": DUNE_API_KEY}
+    response = requests.post("https://api.dune.com/v1/query", json={"query": dune_query}, headers=headers)
+    return response.json().get("data", [])
+
+# Function to compute credit score based on activity
+def compute_credit_score(wallet_data, defi_activity):
+    score = 600  # Base score
+    
+    # Increase score for older wallets
+    if wallet_data and len(wallet_data) > 0:
+        first_tx_time = int(wallet_data[0]['timeStamp'])
+        wallet_age_years = (pd.Timestamp.now().timestamp() - first_tx_time) / (365 * 24 * 3600)
+        score += min(wallet_age_years * 10, 50)
+    
+    # Increase for frequent transactions
+    if len(wallet_data) > 100:
+        score += 50
+    elif len(wallet_data) > 50:
+        score += 30
+    
+    # Check DeFi interactions
+    if defi_activity:
+        num_borrows = sum(1 for tx in defi_activity if tx["action"] == "borrow")
+        num_repayments = sum(1 for tx in defi_activity if tx["action"] == "repay")
+        score += num_repayments * 5
+        score -= num_borrows * 3  # Borrowing increases risk
+    
+    return min(max(score, 300), 850)  # Keep within 300-850 range
+
+# Main function to get score
+def get_defi_credit_score(wallet_address):
+    wallet_data = get_wallet_transactions(wallet_address)
+    defi_activity = get_defi_activity(wallet_address)
+    score = compute_credit_score(wallet_data, defi_activity)
+    return {"wallet": wallet_address, "credit_score": score}
+
+if __name__ == "__main__":
+    wallet = "0xYourWalletAddressHere"
+    credit_score = get_defi_credit_score(wallet)
+    print(json.dumps(credit_score, indent=4))
